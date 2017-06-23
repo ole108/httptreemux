@@ -1,4 +1,4 @@
-package httptreemux
+package way
 
 import (
 	"net/http"
@@ -14,13 +14,13 @@ func TestEmptyGroupAndMapping(t *testing.T) {
 			t.Error(`Expected NewGroup("")`)
 		}
 	}()
-	New().GET("", func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {})
+	New().Handle("GET", "", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 }
 func TestSubGroupSlashMapping(t *testing.T) {
 	r := New()
-	r.NewGroup("/foo").GET("/", func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+	r.NewGroup("/foo").Handle("GET", "/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
-	})
+	}))
 
 	var req *http.Request
 	var recorder *httptest.ResponseRecorder
@@ -42,9 +42,9 @@ func TestSubGroupSlashMapping(t *testing.T) {
 
 func TestSubGroupEmptyMapping(t *testing.T) {
 	r := New()
-	r.NewGroup("/foo").GET("", func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+	r.NewGroup("/foo").Handle("GET", "", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
-	})
+	}))
 	req, _ := http.NewRequest("GET", "/foo", nil)
 	recorder := httptest.NewRecorder()
 	r.ServeHTTP(recorder, req)
@@ -67,7 +67,7 @@ func TestInvalidHandle(t *testing.T) {
 			t.Error("Bad handle path should have caused a panic")
 		}
 	}()
-	New().NewGroup("/foo").GET("bar", nil)
+	New().NewGroup("/foo").Handle("GET", "bar", nil)
 }
 
 func TestInvalidSubPath(t *testing.T) {
@@ -91,20 +91,20 @@ func TestInvalidPath(t *testing.T) {
 //Liberally borrowed from router_test
 func testGroupMethods(t *testing.T, reqGen RequestCreator, headCanUseGet bool) {
 	var result string
-	makeHandler := func(method string) HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	makeHandler := func(method string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			result = method
-		}
+		})
 	}
 	router := New()
 	router.HeadCanUseGet = headCanUseGet
 	// Testing with a sub-group of a group as that will test everything at once
 	g := router.NewGroup("/base").NewGroup("/user")
-	g.GET("/:param", makeHandler("GET"))
-	g.POST("/:param", makeHandler("POST"))
-	g.PATCH("/:param", makeHandler("PATCH"))
-	g.PUT("/:param", makeHandler("PUT"))
-	g.DELETE("/:param", makeHandler("DELETE"))
+	g.Handle("GET", "/:param", makeHandler("GET"))
+	g.Handle("POST", "/:param", makeHandler("POST"))
+	g.Handle("PATCH", "/:param", makeHandler("PATCH"))
+	g.Handle("PUT", "/:param", makeHandler("PUT"))
+	g.Handle("DELETE", "/:param", makeHandler("DELETE"))
 
 	testMethod := func(method, expect string) {
 		result = ""
@@ -133,23 +133,23 @@ func testGroupMethods(t *testing.T, reqGen RequestCreator, headCanUseGet bool) {
 		testMethod("HEAD", "")
 	}
 
-	router.HEAD("/base/user/:param", makeHandler("HEAD"))
+	router.Handle("HEAD", "/base/user/:param", makeHandler("HEAD"))
 	testMethod("HEAD", "HEAD")
 }
 
 // Ensure that setting a GET handler doesn't overwrite an explciit HEAD handler.
 func TestSetGetAfterHead(t *testing.T) {
 	var result string
-	makeHandler := func(method string) HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	makeHandler := func(method string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			result = method
-		}
+		})
 	}
 
 	router := New()
 	router.HeadCanUseGet = true
-	router.HEAD("/abc", makeHandler("HEAD"))
-	router.GET("/abc", makeHandler("GET"))
+	router.Handle("HEAD", "/abc", makeHandler("HEAD"))
+	router.Handle("GET", "/abc", makeHandler("GET"))
 
 	testMethod := func(method, expect string) {
 		result = ""

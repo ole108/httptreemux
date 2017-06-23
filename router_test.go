@@ -1,4 +1,4 @@
-package httptreemux
+package way
 
 import (
 	"fmt"
@@ -14,11 +14,11 @@ import (
 	"testing"
 )
 
-func simpleHandler(w http.ResponseWriter, r *http.Request, params map[string]string) {}
+var simpleHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
-func panicHandler(w http.ResponseWriter, r *http.Request, params map[string]string) {
+var panicHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	panic("test panic")
-}
+})
 
 func newRequest(method, path string, body io.Reader) (*http.Request, error) {
 	r, _ := http.NewRequest(method, path, body)
@@ -82,10 +82,9 @@ func serve(router *TreeMux, w http.ResponseWriter, r *http.Request, useLookup bo
 		result, found := router.Lookup(w, r)
 		router.ServeLookupResult(w, r, result)
 		return found
-	} else {
-		router.ServeHTTP(w, r)
-		return true
 	}
+	router.ServeHTTP(w, r)
+	return true
 }
 
 func TestMethods(t *testing.T) {
@@ -99,19 +98,19 @@ func TestMethods(t *testing.T) {
 func testMethods(t *testing.T, newRequest RequestCreator, headCanUseGet bool, useSeparateLookup bool) {
 	var result string
 
-	makeHandler := func(method string) HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	makeHandler := func(method string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			result = method
-		}
+		})
 	}
 
 	router := New()
 	router.HeadCanUseGet = headCanUseGet
-	router.GET("/user/:param", makeHandler("GET"))
-	router.POST("/user/:param", makeHandler("POST"))
-	router.PATCH("/user/:param", makeHandler("PATCH"))
-	router.PUT("/user/:param", makeHandler("PUT"))
-	router.DELETE("/user/:param", makeHandler("DELETE"))
+	router.Handle("GET", "/user/:param", makeHandler("GET"))
+	router.Handle("POST", "/user/:param", makeHandler("POST"))
+	router.Handle("PATCH", "/user/:param", makeHandler("PATCH"))
+	router.Handle("PUT", "/user/:param", makeHandler("PUT"))
+	router.Handle("DELETE", "/user/:param", makeHandler("DELETE"))
 
 	testMethod := func(method, expect string) {
 		result = ""
@@ -145,7 +144,7 @@ func testMethods(t *testing.T, newRequest RequestCreator, headCanUseGet bool, us
 		testMethod("HEAD", "")
 	}
 
-	router.HEAD("/user/:param", makeHandler("HEAD"))
+	router.Handle("HEAD", "/user/:param", makeHandler("HEAD"))
 	testMethod("HEAD", "HEAD")
 }
 
@@ -157,7 +156,7 @@ func TestNotFound(t *testing.T) {
 	}
 
 	router := New()
-	router.GET("/user/abc", simpleHandler)
+	router.Handle("GET", "/user/abc", simpleHandler)
 
 	w := httptest.NewRecorder()
 	r, _ := newRequest("GET", "/abc/", nil)
@@ -180,7 +179,7 @@ func TestMethodNotAllowedHandler(t *testing.T) {
 	calledNotAllowed := false
 
 	notAllowedHandler := func(w http.ResponseWriter, r *http.Request,
-		methods map[string]HandlerFunc) {
+		methods map[string]http.Handler) {
 
 		calledNotAllowed = true
 
@@ -200,9 +199,9 @@ func TestMethodNotAllowedHandler(t *testing.T) {
 	}
 
 	router := New()
-	router.GET("/user/abc", simpleHandler)
-	router.PUT("/user/abc", simpleHandler)
-	router.DELETE("/user/abc", simpleHandler)
+	router.Handle("GET", "/user/abc", simpleHandler)
+	router.Handle("PUT", "/user/abc", simpleHandler)
+	router.Handle("DELETE", "/user/abc", simpleHandler)
 
 	w := httptest.NewRecorder()
 	r, _ := newRequest("POST", "/user/abc", nil)
@@ -233,21 +232,21 @@ func TestMethodNotAllowedHandler(t *testing.T) {
 }
 
 func TestOptionsHandler(t *testing.T) {
-	optionsHandler := func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+	optionsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusNoContent)
-	}
+	})
 
-	customOptionsHandler := func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+	customOptionsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "httptreemux.com")
 		w.WriteHeader(http.StatusUnauthorized)
-	}
+	})
 
 	router := New()
-	router.GET("/user/abc", simpleHandler)
-	router.PUT("/user/abc", simpleHandler)
-	router.DELETE("/user/abc", simpleHandler)
-	router.OPTIONS("/user/abc/options", customOptionsHandler)
+	router.Handle("GET", "/user/abc", simpleHandler)
+	router.Handle("PUT", "/user/abc", simpleHandler)
+	router.Handle("DELETE", "/user/abc", simpleHandler)
+	router.Handle("OPTIONS", "/user/abc/options", customOptionsHandler)
 
 	// test without an OPTIONS handler
 	w := httptest.NewRecorder()
@@ -311,7 +310,7 @@ func TestPanic(t *testing.T) {
 
 	router := New()
 	router.PanicHandler = SimplePanicHandler
-	router.GET("/abc", panicHandler)
+	router.Handle("GET", "/abc", panicHandler)
 	r, _ := newRequest("GET", "/abc", nil)
 	w := httptest.NewRecorder()
 
@@ -375,10 +374,10 @@ func behaviorToCode(b RedirectBehavior) int {
 func testRedirect(t *testing.T, defaultBehavior, getBehavior, postBehavior RedirectBehavior, customMethods bool,
 	newRequest RequestCreator, serveStyle bool) {
 
-	var redirHandler = func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	var redirHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Returning this instead of 200 makes it easy to verify that the handler is actually getting called.
 		w.WriteHeader(http.StatusNoContent)
-	}
+	})
 
 	router := New()
 	router.RedirectBehavior = defaultBehavior
@@ -395,12 +394,12 @@ func testRedirect(t *testing.T, defaultBehavior, getBehavior, postBehavior Redir
 		expectedCodeMap["POST"] = expectedCodeMap["PUT"]
 	}
 
-	router.GET("/slash/", redirHandler)
-	router.GET("/noslash", redirHandler)
-	router.POST("/slash/", redirHandler)
-	router.POST("/noslash", redirHandler)
-	router.PUT("/slash/", redirHandler)
-	router.PUT("/noslash", redirHandler)
+	router.Handle("GET", "/slash/", redirHandler)
+	router.Handle("GET", "/noslash", redirHandler)
+	router.Handle("POST", "/slash/", redirHandler)
+	router.Handle("POST", "/noslash", redirHandler)
+	router.Handle("PUT", "/slash/", redirHandler)
+	router.Handle("PUT", "/noslash", redirHandler)
 
 	for method, expectedCode := range expectedCodeMap {
 		t.Logf("Testing method %s, expecting code %d", method, expectedCode)
@@ -520,8 +519,8 @@ func TestSkipRedirect(t *testing.T) {
 	router := New()
 	router.RedirectTrailingSlash = false
 	router.RedirectCleanPath = false
-	router.GET("/slash/", simpleHandler)
-	router.GET("/noslash", simpleHandler)
+	router.Handle("GET", "/slash/", simpleHandler)
+	router.Handle("GET", "/noslash", simpleHandler)
 
 	w := httptest.NewRecorder()
 	r, _ := newRequest("GET", "/slash", nil)
@@ -549,7 +548,7 @@ func TestCatchAllTrailingSlashRedirect(t *testing.T) {
 	router := New()
 	redirectSettings := []bool{false, true}
 
-	router.GET("/abc/*path", simpleHandler)
+	router.Handle("GET", "/abc/*path", simpleHandler)
 
 	testPath := func(path string) {
 		r, _ := newRequest("GET", "/abc/"+path, nil)
@@ -591,11 +590,11 @@ func TestRoot(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Log(scenario.description)
 		handlerCalled := false
-		handler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handlerCalled = true
-		}
+		})
 		router := New()
-		router.GET("/", handler)
+		router.Handle("GET", "/", handler)
 
 		r, _ := scenario.RequestCreator("GET", "/", nil)
 		w := new(mockResponseWriter)
@@ -609,16 +608,17 @@ func TestRoot(t *testing.T) {
 
 func TestWildcardAtSplitNode(t *testing.T) {
 	var suppliedParam string
-	simpleHandler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		t.Log(params)
-		suppliedParam, _ = params["slug"]
-	}
+	simpleHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		t.Log(ctx)
+		suppliedParam = Param(ctx, "slug")
+	})
 
 	router := New()
-	router.GET("/pumpkin", simpleHandler)
-	router.GET("/passing", simpleHandler)
-	router.GET("/:slug", simpleHandler)
-	router.GET("/:slug/abc", simpleHandler)
+	router.Handle("GET", "/pumpkin", simpleHandler)
+	router.Handle("GET", "/passing", simpleHandler)
+	router.Handle("GET", "/:slug", simpleHandler)
+	router.Handle("GET", "/:slug/abc", simpleHandler)
 
 	t.Log(router.root.dumpTree("", " "))
 
@@ -658,15 +658,15 @@ func TestWildcardAtSplitNode(t *testing.T) {
 
 func TestSlash(t *testing.T) {
 	param := ""
-	handler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		param = params["param"]
-	}
-	ymHandler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		param = params["year"] + " " + params["month"]
-	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		param = Param(r.Context(), "param")
+	})
+	ymHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		param = Param(r.Context(), "year") + " " + Param(r.Context(), "month")
+	})
 	router := New()
-	router.GET("/abc/:param", handler)
-	router.GET("/year/:year/month/:month", ymHandler)
+	router.Handle("GET", "/abc/:param", handler)
+	router.Handle("GET", "/year/:year/month/:month", ymHandler)
 
 	r, _ := newRequest("GET", "/abc/de%2ff", nil)
 	w := new(mockResponseWriter)
@@ -688,13 +688,13 @@ func TestQueryString(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Log(scenario.description)
 		param := ""
-		handler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-			param = params["param"]
-		}
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			param = Param(r.Context(), "param")
+		})
 		router := New()
-		router.GET("/static", handler)
-		router.GET("/wildcard/:param", handler)
-		router.GET("/catchall/*param", handler)
+		router.Handle("GET", "/static", handler)
+		router.Handle("GET", "/wildcard/:param", handler)
+		router.Handle("GET", "/catchall/*param", handler)
 
 		r, _ := scenario.RequestCreator("GET", "/static?abc=def&ghi=jkl", nil)
 		w := new(mockResponseWriter)
@@ -722,16 +722,16 @@ func TestQueryString(t *testing.T) {
 func TestPathSource(t *testing.T) {
 	var called string
 
-	appleHandler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	appleHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = "apples"
-	}
+	})
 
-	bananaHandler := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	bananaHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = "bananas"
-	}
+	})
 	router := New()
-	router.GET("/apples", appleHandler)
-	router.GET("/bananas", bananaHandler)
+	router.Handle("GET", "/apples", appleHandler)
+	router.Handle("GET", "/bananas", bananaHandler)
 
 	// Set up a request with different values in URL and RequestURI.
 	r, _ := newRequest("GET", "/apples", nil)
@@ -784,14 +784,12 @@ func TestEscapedRoutes(t *testing.T) {
 		var foundParamKey string
 		var foundParamValue string
 
-		handleTestResponse := func(c *testcase, w http.ResponseWriter, r *http.Request, params map[string]string) {
+		handleTestResponse := func(c *testcase, w http.ResponseWriter, r *http.Request, key string) {
 			foundTestCase = c
 			foundParamKey = ""
 			foundParamValue = ""
-			for key, val := range params {
-				foundParamKey = key
-				foundParamValue = val
-			}
+			foundParamKey = key
+			foundParamValue = Param(r.Context(), key)
 			t.Logf("RequestURI %s found test case %+v", r.RequestURI, c)
 		}
 
@@ -817,9 +815,9 @@ func TestEscapedRoutes(t *testing.T) {
 		for _, c := range testcases {
 			t.Logf("Adding route %s", c.Route)
 			theCase := c
-			router.GET(c.Route, func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-				handleTestResponse(theCase, w, r, params)
-			})
+			router.Handle("GET", c.Route, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handleTestResponse(theCase, w, r, c.Param)
+			}))
 		}
 
 		for _, c := range testcases {
@@ -859,11 +857,11 @@ func TestEscapedRoutes(t *testing.T) {
 func createRoutes(numRoutes int) []string {
 	letters := "abcdefghijhklmnopqrstuvwxyz"
 	wordMap := map[string]bool{}
-	for i := 0; i < numRoutes/2; i += 1 {
+	for i := 0; i < numRoutes/2; i++ {
 		length := (i % 4) + 4
 
 		wordBytes := make([]byte, length)
-		for charIndex := 0; charIndex < length; charIndex += 1 {
+		for charIndex := 0; charIndex < length; charIndex++ {
 			wordBytes[charIndex] = letters[(i*3+charIndex*4)%len(letters)]
 		}
 		wordMap[string(wordBytes)] = true
@@ -904,7 +902,7 @@ func TestWriteConcurrency(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	addRoutes := func(base int, method string) {
-		for i := 0; i < len(routes); i += 1 {
+		for i := 0; i < len(routes); i++ {
 			route := routes[(i+base)%len(routes)]
 			// t.Logf("Adding %s %s", method, route)
 			router.Handle(method, route, simpleHandler)
@@ -952,7 +950,7 @@ func TestReadWriteConcurrency(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	addRoutes := func(base int, method string, routes []string) {
-		for i := 0; i < len(routes); i += 1 {
+		for i := 0; i < len(routes); i++ {
 			route := routes[(i+base)%len(routes)]
 			// t.Logf("Adding %s %s", method, route)
 			router.Handle(method, route, simpleHandler)
@@ -961,7 +959,7 @@ func TestReadWriteConcurrency(t *testing.T) {
 	}
 
 	handleRequests := func(base int, method string, routes []string, requireFound bool) {
-		for i := 0; i < len(routes); i += 1 {
+		for i := 0; i < len(routes); i++ {
 			route := routes[(i+base)%len(routes)]
 			// t.Logf("Serving %s %s", method, route)
 			r, _ := newRequest(method, route, nil)
@@ -1005,11 +1003,11 @@ func TestReadWriteConcurrency(t *testing.T) {
 
 func TestLookup(t *testing.T) {
 	router := New()
-	router.GET("/", simpleHandler)
-	router.GET("/user/dimfeld", simpleHandler)
-	router.POST("/user/dimfeld", simpleHandler)
-	router.GET("/abc/*", simpleHandler)
-	router.POST("/abc/*", simpleHandler)
+	router.Handle("GET", "/", simpleHandler)
+	router.Handle("GET", "/user/dimfeld", simpleHandler)
+	router.Handle("POST", "/user/dimfeld", simpleHandler)
+	router.Handle("GET", "/abc/*", simpleHandler)
+	router.Handle("POST", "/abc/*", simpleHandler)
 
 	var tryLookup = func(method, path string, expectFound bool, expectCode int) {
 		r, _ := newRequest(method, path, nil)
@@ -1046,8 +1044,8 @@ func TestLookup(t *testing.T) {
 func BenchmarkRouterSimple(b *testing.B) {
 	router := New()
 
-	router.GET("/", simpleHandler)
-	router.GET("/user/dimfeld", simpleHandler)
+	router.Handle("GET", "/", simpleHandler)
+	router.Handle("GET", "/user/dimfeld", simpleHandler)
 
 	r, _ := newRequest("GET", "/user/dimfeld", nil)
 
@@ -1058,8 +1056,8 @@ func BenchmarkRouterRootWithPanicHandler(b *testing.B) {
 	router := New()
 	router.PanicHandler = SimplePanicHandler
 
-	router.GET("/", simpleHandler)
-	router.GET("/user/dimfeld", simpleHandler)
+	router.Handle("GET", "/", simpleHandler)
+	router.Handle("GET", "/user/dimfeld", simpleHandler)
 
 	r, _ := newRequest("GET", "/", nil)
 
@@ -1070,8 +1068,8 @@ func BenchmarkRouterRootWithoutPanicHandler(b *testing.B) {
 	router := New()
 	router.PanicHandler = nil
 
-	router.GET("/", simpleHandler)
-	router.GET("/user/dimfeld", simpleHandler)
+	router.Handle("GET", "/", simpleHandler)
+	router.Handle("GET", "/user/dimfeld", simpleHandler)
 
 	r, _ := newRequest("GET", "/", nil)
 
@@ -1081,8 +1079,8 @@ func BenchmarkRouterRootWithoutPanicHandler(b *testing.B) {
 func BenchmarkRouterParam(b *testing.B) {
 	router := New()
 
-	router.GET("/", simpleHandler)
-	router.GET("/user/:name", simpleHandler)
+	router.Handle("GET", "/", simpleHandler)
+	router.Handle("GET", "/user/:name", simpleHandler)
 
 	r, _ := newRequest("GET", "/user/dimfeld", nil)
 
@@ -1092,8 +1090,8 @@ func BenchmarkRouterParam(b *testing.B) {
 func BenchmarkRouterLongParams(b *testing.B) {
 	router := New()
 
-	router.GET("/", simpleHandler)
-	router.GET("/user/:name/:resource", simpleHandler)
+	router.Handle("GET", "/", simpleHandler)
+	router.Handle("GET", "/user/:name/:resource", simpleHandler)
 
 	r, _ := newRequest("GET", "/user/aaaabbbbccccddddeeeeffff/asdfghjkl", nil)
 

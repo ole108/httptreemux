@@ -1,17 +1,22 @@
-// This is inspired by Julien Schmidt's httprouter, in that it uses a patricia tree, but the
+// Package way is almost a copy of Daniel Imfeld's httptreemux that is inspired by Julien Schmidt's
+// httprouter, in that it uses a patricia tree, but the
 // implementation is rather different. Specifically, the routing rules are relaxed so that a
 // single path segment may be a wildcard in one route and a static token in another. This gives a
 // nice combination of high performance with a lot of convenience in designing the routing patterns.
-package httptreemux
+package way
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 )
 
+// HandlerFunc is an outdated form of using the router.
 // The params argument contains the parameters parsed from wildcards and catch-alls in the URL.
 type HandlerFunc func(http.ResponseWriter, *http.Request, map[string]string)
+
+// PanicHandler gives the opportunity to recover from and handle panics.
 type PanicHandler func(http.ResponseWriter, *http.Request, interface{})
 
 // RedirectBehavior sets the behavior when the router redirects the request to the
@@ -33,16 +38,23 @@ type PanicHandler func(http.ResponseWriter, *http.Request, interface{})
 // Finally, the UseHandler value will simply call the handler function for the pattern.
 type RedirectBehavior int
 
+// PathSource is either r.RequestURI or r.URL.Path.
 type PathSource int
 
 const (
-	Redirect301 RedirectBehavior = iota // Return 301 Moved Permanently
-	Redirect307                         // Return 307 HTTP/1.1 Temporary Redirect
-	Redirect308                         // Return a 308 RFC7538 Permanent Redirect
-	UseHandler                          // Just call the handler function
+	// Redirect301 returns 301 Moved Permanently.
+	Redirect301 RedirectBehavior = iota
+	// Redirect307 returns 307 HTTP/1.1 Temporary Redirect.
+	Redirect307
+	// Redirect308 returns a 308 RFC7538 Permanent Redirect.
+	Redirect308
+	// UseHandler just calls the handler function.
+	UseHandler
 
-	RequestURI PathSource = iota // Use r.RequestURI
-	URLPath                      // Use r.URL.Path
+	// RequestURI uses r.RequestURI.
+	RequestURI PathSource = iota
+	// URLPath uses r.URL.Path.
+	URLPath
 )
 
 // LookupResult contains information about a route lookup, which is returned from Lookup and
@@ -53,9 +65,9 @@ type LookupResult struct {
 	// error case. On a normal success, the statusCode will be `http.StatusOK`. A redirect code
 	// will also be used in the case
 	StatusCode  int
-	handler     HandlerFunc
+	handler     http.Handler
 	params      map[string]string
-	leafHandler map[string]HandlerFunc // Only has a value when StatusCode is MethodNotAllowed.
+	leafHandler map[string]http.Handler // Only has a value when StatusCode is MethodNotAllowed.
 }
 
 // Dump returns a text representation of the routing tree.
@@ -91,10 +103,10 @@ func (t *TreeMux) redirectStatusCode(method string) (int, bool) {
 	}
 }
 
-func redirectHandler(newPath string, statusCode int) HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+func redirectHandler(newPath string, statusCode int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, newPath, statusCode)
-	}
+	})
 }
 
 func redirect(w http.ResponseWriter, r *http.Request, newPath string, statusCode int) {
@@ -166,7 +178,7 @@ func (t *TreeMux) lookup(w http.ResponseWriter, r *http.Request) (result LookupR
 	if !n.isCatchAll || t.RemoveCatchAllTrailingSlash {
 		if trailingSlash != n.addSlash && t.RedirectTrailingSlash {
 			if statusCode, ok := t.redirectStatusCode(r.Method); ok {
-				var h HandlerFunc
+				var h http.Handler
 				if n.addSlash {
 					// Need to add a slash.
 					h = redirectHandler(path+"/", statusCode)
@@ -234,7 +246,12 @@ func (t *TreeMux) ServeLookupResult(w http.ResponseWriter, r *http.Request, lr L
 		}
 	} else {
 		r = t.setDefaultRequestContext(r)
-		lr.handler(w, r, lr.params)
+		ctx := r.Context()
+		for k, v := range lr.params {
+			ctx = context.WithValue(ctx, wayContextKey(k), v)
+		}
+		r.WithContext(ctx)
+		lr.handler.ServeHTTP(w, r)
 	}
 }
 
@@ -263,7 +280,7 @@ func (t *TreeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // requested method. It simply writes the status code http.StatusMethodNotAllowed and fills
 // in the `Allow` header value appropriately.
 func MethodNotAllowedHandler(w http.ResponseWriter, r *http.Request,
-	methods map[string]HandlerFunc) {
+	methods map[string]http.Handler) {
 
 	for m := range methods {
 		w.Header().Add("Allow", m)
@@ -272,6 +289,7 @@ func MethodNotAllowedHandler(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
+// New creates a new TreeMux.
 func New() *TreeMux {
 	tm := &TreeMux{
 		root:                    &node{path: "/"},

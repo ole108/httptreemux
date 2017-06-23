@@ -1,4 +1,4 @@
-package httptreemux
+package way
 
 import (
 	"net/http"
@@ -12,9 +12,9 @@ func dummyHandler(w http.ResponseWriter, r *http.Request, urlParams map[string]s
 func addPath(t *testing.T, tree *node, path string) {
 	t.Logf("Adding path %s", path)
 	n := tree.addPath(path[1:], nil, false)
-	handler := func(w http.ResponseWriter, r *http.Request, urlParams map[string]string) {
-		urlParams["path"] = path
-	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.WithContext(setParam(r.Context(), wayContextKey("path"), path))
+	})
 	n.setHandler("GET", handler, false)
 }
 
@@ -55,7 +55,7 @@ func testPath(t *testing.T, tree *node, path string, expectPath string, expected
 	}
 
 	pathMap := make(map[string]string)
-	handler(nil, nil, pathMap)
+	handler.ServeHTTP(nil, nil)
 	matchedPath := pathMap["path"]
 
 	if matchedPath != expectPath {

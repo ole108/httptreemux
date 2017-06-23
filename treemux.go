@@ -1,12 +1,12 @@
-// +build !go1.7
-
-package httptreemux
+package way
 
 import (
+	"context"
 	"net/http"
 	"sync"
 )
 
+// TreeMux is a tree based multiplexer.
 type TreeMux struct {
 	root  *node
 	mutex sync.RWMutex
@@ -21,7 +21,7 @@ type TreeMux struct {
 
 	// Any OPTIONS request that matches a path without its own OPTIONS handler will use this handler,
 	// if set, instead of calling MethodNotAllowedHandler.
-	OptionsHandler HandlerFunc
+	OptionsHandler http.Handler
 
 	// MethodNotAllowedHandler is called when a pattern matches, but that
 	// pattern does not have a handler for the requested method. The default
@@ -30,7 +30,7 @@ type TreeMux struct {
 	// The methods parameter contains the map of each method to the corresponding
 	// handler function.
 	MethodNotAllowedHandler func(w http.ResponseWriter, r *http.Request,
-		methods map[string]HandlerFunc)
+		methods map[string]http.Handler)
 
 	// HeadCanUseGet allows the router to use the GET handler to respond to
 	// HEAD requests if no explicit HEAD handler has been added for the
@@ -74,6 +74,9 @@ type TreeMux struct {
 	// a version passed through URL.EscapedPath. This behavior is disabled by default.
 	EscapeAddedRoutes bool
 
+	// If present, override the default context with this one.
+	DefaultContext context.Context
+
 	// SafeAddRoutesWhileRunning tells the router to protect all accesses to the tree with an RWMutex. This is only needed
 	// if you are going to add routes after the router has already begun serving requests. There is a potential
 	// performance penalty at high load.
@@ -81,6 +84,37 @@ type TreeMux struct {
 }
 
 func (t *TreeMux) setDefaultRequestContext(r *http.Request) *http.Request {
-	// Nothing to do on Go 1.6 and before
+	if t.DefaultContext != nil {
+		r = r.WithContext(t.DefaultContext)
+	}
+
 	return r
+}
+
+// ContextMux is a context.Context aware tree based multiplexer.
+type ContextMux struct {
+	*TreeMux
+	//	*ContextGroup
+}
+
+// NewContextMux returns a TreeMux preconfigured to work with standard http
+// Handler functions and context objects.
+func NewContextMux() *ContextMux {
+	mux := New()
+	//	cg := mux.UsingContext()
+
+	return &ContextMux{
+		TreeMux: mux,
+		//		ContextGroup: cg,
+	}
+}
+
+// NewGroup creates a new Group for path.
+func (cm *ContextMux) NewGroup(path string) *Group {
+	return cm.TreeMux.Group.NewGroup(path)
+}
+
+// Handle is convenience method for handling requests on a context group.
+func (cm *ContextMux) Handle(method, path string, handler http.Handler) {
+	cm.TreeMux.Group.Handle(method, path, handler)
 }

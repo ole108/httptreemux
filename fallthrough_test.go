@@ -1,9 +1,9 @@
-package httptreemux
+package way
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 )
 
@@ -13,16 +13,16 @@ import (
 func TestMethodNotAllowedFallthrough(t *testing.T) {
 	var matchedMethod string
 	var matchedPath string
-	var matchedParams map[string]string
+	var matchedCtx context.Context
 
 	router := New()
 
 	addRoute := func(method, path string) {
-		router.Handle(method, path, func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		router.Handle(method, path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			matchedMethod = method
 			matchedPath = path
-			matchedParams = params
-		})
+			matchedCtx = r.Context()
+		}))
 	}
 
 	checkRoute := func(method, path, expectedMethod, expectedPath string,
@@ -30,7 +30,7 @@ func TestMethodNotAllowedFallthrough(t *testing.T) {
 
 		matchedMethod = ""
 		matchedPath = ""
-		matchedParams = nil
+		matchedCtx = context.Background()
 
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest(method, path, nil)
@@ -45,8 +45,10 @@ func TestMethodNotAllowedFallthrough(t *testing.T) {
 					expectedMethod, expectedPath, matchedMethod, matchedPath)
 			}
 
-			if !reflect.DeepEqual(matchedParams, expectedParams) {
-				t.Errorf("%s %s expected params %+v, saw %+v", method, path, expectedParams, matchedParams)
+			for k, v := range expectedParams {
+				if Param(matchedCtx, k) != v {
+					t.Errorf("%s %s expected param %+v, saw %+v", method, path, v, Param(matchedCtx, k))
+				}
 			}
 		}
 	}

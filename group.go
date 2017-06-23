@@ -1,17 +1,19 @@
-package httptreemux
+package way
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 )
 
+// Group is a subtree of a treeMux.
 type Group struct {
 	path string
 	mux  *TreeMux
 }
 
-// Add a sub-group to this group
+// NewGroup adds a sub-group to this group.
 func (g *Group) NewGroup(path string) *Group {
 	if len(path) < 1 {
 		panic("Group path must not be empty")
@@ -26,6 +28,7 @@ func (g *Group) NewGroup(path string) *Group {
 	return &Group{path, g.mux}
 }
 
+// Handle handles a HTTP request.
 // Path elements starting with : indicate a wildcard in the path. A wildcard will only match on a
 // single path segment. That is, the pattern `/post/:postid` will match on `/post/1` or `/post/1/`,
 // but not `/post/1/2`.
@@ -88,7 +91,7 @@ func (g *Group) NewGroup(path string) *Group {
 // 	GET /posts will redirect to /posts/.
 // 	GET /posts/ will match normally.
 // 	POST /posts will redirect to /posts/, because the GET method used a trailing slash.
-func (g *Group) Handle(method string, path string, handler HandlerFunc) {
+func (g *Group) Handle(method string, path string, handler http.Handler) {
 	g.mux.mutex.Lock()
 	defer g.mux.mutex.Unlock()
 
@@ -129,41 +132,6 @@ func (g *Group) Handle(method string, path string, handler HandlerFunc) {
 	}
 
 	addOne(path)
-}
-
-// Syntactic sugar for Handle("GET", path, handler)
-func (g *Group) GET(path string, handler HandlerFunc) {
-	g.Handle("GET", path, handler)
-}
-
-// Syntactic sugar for Handle("POST", path, handler)
-func (g *Group) POST(path string, handler HandlerFunc) {
-	g.Handle("POST", path, handler)
-}
-
-// Syntactic sugar for Handle("PUT", path, handler)
-func (g *Group) PUT(path string, handler HandlerFunc) {
-	g.Handle("PUT", path, handler)
-}
-
-// Syntactic sugar for Handle("DELETE", path, handler)
-func (g *Group) DELETE(path string, handler HandlerFunc) {
-	g.Handle("DELETE", path, handler)
-}
-
-// Syntactic sugar for Handle("PATCH", path, handler)
-func (g *Group) PATCH(path string, handler HandlerFunc) {
-	g.Handle("PATCH", path, handler)
-}
-
-// Syntactic sugar for Handle("HEAD", path, handler)
-func (g *Group) HEAD(path string, handler HandlerFunc) {
-	g.Handle("HEAD", path, handler)
-}
-
-// Syntactic sugar for Handle("OPTIONS", path, handler)
-func (g *Group) OPTIONS(path string, handler HandlerFunc) {
-	g.Handle("OPTIONS", path, handler)
 }
 
 func checkPath(path string) {
