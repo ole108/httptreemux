@@ -98,19 +98,18 @@ func (n *node) addPath(path string, wildcards []string, inStaticToken bool) *nod
 		thisToken = path
 		tokenEnd = len(path)
 	} else {
-		thisToken = path[0:nextSlash]
+		thisToken = path[:nextSlash]
 		tokenEnd = nextSlash
 	}
 	remainingPath := path[tokenEnd:]
 
-	if c == '*' && !inStaticToken {
-		// Token starts with a *, so it's a catch-all
-		thisToken = thisToken[1:]
+	if c == '.' && !inStaticToken && thisToken == "..." {
+		// Token is ..., so it is a catch-all
 		if n.catchAllChild == nil {
 			n.catchAllChild = &node{path: thisToken, isCatchAll: true}
 		}
 
-		if path[1:] != n.catchAllChild.path {
+		if path != n.catchAllChild.path {
 			panic(fmt.Sprintf("Catch-all name in %s doesn't match %s. You probably tried to define overlapping catchalls",
 				path, n.catchAllChild.path))
 		}
@@ -120,9 +119,9 @@ func (n *node) addPath(path string, wildcards []string, inStaticToken bool) *nod
 		}
 
 		if wildcards == nil {
-			wildcards = []string{thisToken}
+			wildcards = []string{thisToken} // TODO: Is this necessary?
 		} else {
-			wildcards = append(wildcards, thisToken)
+			wildcards = append(wildcards, thisToken) // TODO: Is this necessary?
 		}
 		n.catchAllChild.leafWildcardNames = wildcards
 
@@ -144,13 +143,9 @@ func (n *node) addPath(path string, wildcards []string, inStaticToken bool) *nod
 		return n.wildcardChild.addPath(remainingPath, wildcards, false)
 
 	} else {
-		// if strings.ContainsAny(thisToken, ":*") {
-		// 	panic("* or : in middle of path component " + path)
-		// }
-
 		unescaped := false
 		if len(thisToken) >= 2 && !inStaticToken {
-			if thisToken[0] == '\\' && (thisToken[1] == '*' || thisToken[1] == ':' || thisToken[1] == '\\') {
+			if thisToken[0] == '\\' && (thisToken[1] == '.' || thisToken[1] == ':' || thisToken[1] == '\\') {
 				// The token starts with a character escaped by a backslash. Drop the backslash.
 				c = thisToken[1]
 				thisToken = thisToken[1:]

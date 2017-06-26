@@ -117,8 +117,8 @@ func TestTree(t *testing.T) {
 	addPath(t, tree, "/images/abc.jpg")
 	addPath(t, tree, "/images/:imgname")
 	addPath(t, tree, "/images/\\*path")
-	addPath(t, tree, "/images/\\*patch")
-	addPath(t, tree, "/images/*path")
+	addPath(t, tree, "/images/\\...")
+	addPath(t, tree, "/images/...")
 	addPath(t, tree, "/ima")
 	addPath(t, tree, "/ima/:par")
 	addPath(t, tree, "/images1")
@@ -143,9 +143,9 @@ func TestTree(t *testing.T) {
 	addPath(t, tree, "/:something/abc")
 	addPath(t, tree, "/:something/def")
 	addPath(t, tree, "/apples/ab:cde/:fg/*hi")
-	addPath(t, tree, "/apples/ab*cde/:fg/*hi")
-	addPath(t, tree, "/apples/ab\\*cde/:fg/*hi")
-	addPath(t, tree, "/apples/ab*dde")
+	addPath(t, tree, "/apples/ab...cde/:fg/*hi")
+	addPath(t, tree, "/apples/ab\\...cde/:fg/*hi")
+	addPath(t, tree, "/apples/ab...dde")
 
 	testPath(t, tree, "/users/abc/updatePassword", "/users/:id/updatePassword",
 		map[string]string{"id": "abc"})
@@ -166,8 +166,8 @@ func TestTree(t *testing.T) {
 	testPath(t, tree, "/images/abc.jpg", "/images/abc.jpg", nil)
 	testPath(t, tree, "/images/something", "/images/:imgname",
 		map[string]string{"imgname": "something"})
-	testPath(t, tree, "/images/long/path", "/images/*path",
-		map[string]string{"path": "long/path"})
+	testPath(t, tree, "/images/long/path", "/images/...",
+		map[string]string{"...": "long/path"})
 	testPath(t, tree, "/images/even/longer/path", "/images/*path",
 		map[string]string{"path": "even/longer/path"})
 	testPath(t, tree, "/ima", "/ima", nil)
@@ -232,8 +232,9 @@ func TestTree(t *testing.T) {
 		handler, ok := n.leafHandler["GET"]
 		matchPath := ""
 		if ok {
-			handler(nil, nil, params)
-			matchPath = params["path"]
+
+			handler.ServeHTTP(nil, nil, params)
+			matchPath = r.Context().params["path"]
 		}
 
 		if len(matchPath) < 2 || matchPath[1:] != p {
